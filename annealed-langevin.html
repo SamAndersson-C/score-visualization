@@ -1,0 +1,387 @@
+
+<style>
+.wrap{padding:0.5rem 0}
+.mbar{display:flex;gap:4px;margin-bottom:1rem}
+.mb{font-size:13px;padding:7px 14px;border-radius:var(--border-radius-md);cursor:pointer;border:0.5px solid var(--color-border-tertiary);background:transparent;color:var(--color-text-secondary);transition:all .15s}
+.mb.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+.mb:hover:not(.on){background:var(--color-background-secondary)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.st{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px}
+.st-l{font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.4px;text-transform:none}
+.st-v{font-size:20px;font-weight:500;margin-top:2px}
+.panels{display:flex;flex-direction:column;gap:2px;margin-bottom:2px}
+.pnl{position:relative;width:100%;border-radius:var(--border-radius-lg);overflow:hidden;border:0.5px solid var(--color-border-tertiary)}
+.pnl:first-child{border-bottom:none;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0}
+.pnl:last-child{border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg)}
+.ptag{position:absolute;top:8px;left:10px;font-size:11px;font-weight:500;padding:3px 8px;border-radius:var(--border-radius-md);z-index:2;pointer-events:none}
+canvas{display:block;width:100%;height:auto}
+.mw{margin:12px 0;padding:12px 14px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)}
+.mw-title{font-size:12px;color:var(--color-text-tertiary);letter-spacing:0.4px;margin-bottom:8px}
+.mw-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.mw-row:last-child{margin-bottom:0}
+.mw-label{font-size:12px;color:var(--color-text-secondary);width:64px;text-align:right;flex-shrink:0}
+.mw-track{flex:1;height:22px;display:flex;border-radius:var(--border-radius-md);overflow:hidden}
+.mw-seg{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;transition:width .3s}
+.mw-a{background:#EEEDFE;color:#3C3489}
+.mw-b{background:#E6F1FB;color:#0C447C}
+.ctrl-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.ctrl-row label{font-size:13px;color:var(--color-text-secondary);white-space:nowrap}
+.ctrl-row span{font-size:13px;font-weight:500;min-width:32px}
+.leg{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--color-text-secondary);margin-top:12px}
+.leg-i{display:flex;align-items:center;gap:5px}
+.leg-d{width:8px;height:8px;border-radius:50%}
+.nb{font-size:14px;color:var(--color-text-secondary);line-height:1.65;margin-top:12px;padding:10px 14px;border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;border-left:2px solid var(--color-border-info);background:var(--color-background-secondary)}
+.nb strong{font-weight:500;color:var(--color-text-primary)}
+.fn{font-size:11px;color:var(--color-text-tertiary);margin-top:4px;padding:0 2px}
+</style>
+
+<div class="wrap">
+<div class="mbar">
+  <div class="mb on" data-m="manual">Explore manually</div>
+  <div class="mb" data-m="anneal">Annealed Langevin</div>
+  <div class="mb" data-m="naive">Naive (fixed small noise)</div>
+</div>
+
+<div class="stats">
+  <div class="st"><div class="st-l">Noise <span style="font-style:italic">&#963;</span><sub>i</sub></div><div class="st-v" id="s-sig">5.00</div></div>
+  <div class="st"><div class="st-l">Step size <span style="font-style:italic">&#945;</span><sub>i</sub></div><div class="st-v" id="s-alp">469</div></div>
+  <div class="st"><div class="st-l">Ladder step</div><div class="st-v" id="s-step">--</div></div>
+  <div class="st"><div class="st-l">Phase</div><div class="st-v" id="s-phase" style="font-size:15px">Explore</div></div>
+</div>
+
+<div class="panels">
+  <div class="pnl">
+    <div class="ptag" style="background:var(--color-background-info);color:var(--color-text-info)">Density <i>q</i><sub>&#963;</sub>(<i>x</i>) &#8212; top view</div>
+    <canvas id="cv1"></canvas>
+  </div>
+  <div class="pnl">
+    <div class="ptag" style="background:var(--color-background-warning);color:var(--color-text-warning)"><i>U</i>(<i>x</i>) = &#8211;log <i>q</i><sub>&#963;</sub>(<i>x</i>) &#8212; cross-section</div>
+    <canvas id="cv2"></canvas>
+  </div>
+</div>
+<div class="fn">Energy values are comparable within a fixed &#963;. Across different &#963; levels, absolute values shift by a &#963;-dependent additive constant.</div>
+
+<div class="mw">
+  <div class="mw-title">Mode weight recovery (the real test)</div>
+  <div class="mw-row">
+    <div class="mw-label">Target</div>
+    <div class="mw-track">
+      <div class="mw-seg mw-a" style="width:40%">A: 40%</div>
+      <div class="mw-seg mw-b" style="width:60%">B: 60%</div>
+    </div>
+  </div>
+  <div class="mw-row">
+    <div class="mw-label">Empirical</div>
+    <div class="mw-track">
+      <div class="mw-seg mw-a" id="emp-a" style="width:50%">A: 50%</div>
+      <div class="mw-seg mw-b" id="emp-b" style="width:50%">B: 50%</div>
+    </div>
+  </div>
+</div>
+
+<div class="ctrl-row">
+  <label>Noise scale</label>
+  <input type="range" id="sig-sl" min="0" max="100" value="100" step="1" style="flex:1;max-width:220px">
+  <span id="sig-out">5.00</span>
+  <div style="flex:1"></div>
+  <button id="btn-pp" style="min-width:80px">Play</button>
+  <button id="btn-rst">Reset</button>
+</div>
+
+<div class="leg">
+  <div class="leg-i"><div class="leg-d" style="background:#D85A30"></div>Particle</div>
+  <div class="leg-i"><div class="leg-d" style="background:#0F6E56"></div>Visited both modes</div>
+  <div class="leg-i"><div class="leg-d" style="background:#534AB7"></div>Mode A (&#960; = 0.4)</div>
+  <div class="leg-i"><div class="leg-d" style="background:#185FA5"></div>Mode B (&#960; = 0.6)</div>
+</div>
+
+<div class="nb" id="note">Drag the noise slider to explore. The top panel shows the smoothed density <i>q</i><sub>&#963;</sub> (a 2D Gaussian mixture &#8212; smooth and full-support at every displayed &#963;). The bottom panel shows the potential energy cross-section along the mode axis. The mode-weight bars show whether particles recover the true 40/60 mixture ratio.</div>
+</div>
+
+<script>
+var DK=matchMedia('(prefers-color-scheme:dark)').matches;
+var DPR=Math.min(window.devicePixelRatio||1,2);
+var W=680,H1=260,H2=155;
+
+function setupCanvas(cv,h){cv.width=W*DPR;cv.height=h*DPR;cv.style.width=W+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.scale(DPR,DPR);return c}
+var cv1=document.getElementById('cv1'),cx1=setupCanvas(cv1,H1);
+var cv2=document.getElementById('cv2'),cx2=setupCanvas(cv2,H2);
+
+var SL=[5,3.5,2.4,1.6,1.0,0.65,0.4,0.22,0.1,0.04];
+var NL=SL.length;
+var SIG_L=SL[NL-1];
+var EPS=0.03;
+
+var MA={x:W*0.3,y:H1*0.5},MB={x:W*0.72,y:H1*0.5};
+var WA=0.4,WB=0.6;
+var NP=80;
+var SIG_D2=400,SIG_SC=800;
+
+var sig=5,lvl=0,mode='manual',playing=false,innerT=0;
+var TMAX=90;
+var ps=[];
+
+function alphaFn(s){return EPS*s*s/(SIG_L*SIG_L)}
+
+function totVar(s){return SIG_D2+s*s*SIG_SC}
+function G2d(x,y,cx,cy,s){var v=totVar(s);return Math.exp(-((x-cx)*(x-cx)+(y-cy)*(y-cy))/(2*v))}
+function Dens(x,y,s){return WA*G2d(x,y,MA.x,MA.y,s)+WB*G2d(x,y,MB.x,MB.y,s)}
+function D1d(xp,s){return WA*G2d(xp,H1*0.5,MA.x,MA.y,s)+WB*G2d(xp,H1*0.5,MB.x,MB.y,s)}
+
+function scoreAt(x,y,s){
+  var e=0.5,d=Dens(x,y,s);
+  if(d<1e-14)return[0,0];
+  return[(Dens(x+e,y,s)-Dens(x-e,y,s))/(2*e*d),(Dens(x,y+e,s)-Dens(x,y-e,s))/(2*e*d)]
+}
+function randn(){var u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+
+function initP(){ps=[];for(var i=0;i<NP;i++)ps.push({x:40+Math.random()*(W-80),y:20+Math.random()*(H1-40),tr:[],a:false,b:false})}
+initP();
+
+function stepOnce(a){
+  for(var k=0;k<ps.length;k++){
+    var p=ps[k];
+    var sc=scoreAt(p.x,p.y,sig);
+    p.x+=(a/2)*sc[0]+Math.sqrt(a)*randn();
+    p.y+=(a/2)*sc[1]+Math.sqrt(a)*randn();
+    p.x=Math.max(4,Math.min(W-4,p.x));
+    p.y=Math.max(4,Math.min(H1-4,p.y));
+    p.tr.push({x:p.x,y:p.y});
+    if(p.tr.length>25)p.tr.shift();
+    if(Math.hypot(p.x-MA.x,p.y-MA.y)<50)p.a=true;
+    if(Math.hypot(p.x-MB.x,p.y-MB.y)<50)p.b=true;
+  }
+}
+
+function substepsFor(a){return Math.max(1,Math.min(30,Math.round(Math.sqrt(alphaFn(SL[0])/Math.max(a,0.001)))))}
+
+var densImg=null,lastSI=-1;
+
+function drawDensity(){
+  if(Math.abs(sig-lastSI)>0.01||!densImg){
+    var id=cx1.createImageData(W,H1);var mx=0;var buf=new Float32Array(W*H1);
+    for(var j=0;j<H1;j+=2)for(var i=0;i<W;i+=2){var v=Dens(i,j,sig);buf[j*W+i]=v;if(v>mx)mx=v}
+    for(var j=0;j<H1;j++)for(var i=0;i<W;i++){
+      var si=i&~1,sj=j&~1,v=Math.pow(buf[sj*W+si]/(mx+1e-12),0.45),idx=(j*W+i)*4;
+      if(DK){id.data[idx]=Math.floor(18+v*45);id.data[idx+1]=Math.floor(14+v*22);id.data[idx+2]=Math.floor(28+v*68)}
+      else{id.data[idx]=Math.floor(252-v*70);id.data[idx+1]=Math.floor(248-v*85);id.data[idx+2]=Math.floor(255-v*15)}
+      id.data[idx+3]=255;
+    }
+    densImg=id;lastSI=sig;
+  }
+  cx1.putImageData(densImg,0,0);
+}
+
+function drawContours(){
+  var S=8,cw=Math.ceil(W/S),ch=Math.ceil(H1/S);
+  var mx=0;var g=new Float32Array(cw*ch);
+  for(var j=0;j<ch;j++)for(var i=0;i<cw;i++){var v=Dens(i*S,j*S,sig);g[j*cw+i]=v;if(v>mx)mx=v}
+  cx1.save();cx1.strokeStyle=DK?'rgba(206,203,246,0.12)':'rgba(83,74,183,0.1)';cx1.lineWidth=0.5;
+  var levels=[0.15,0.35,0.55,0.75];
+  for(var li=0;li<levels.length;li++){
+    var th=levels[li]*mx;
+    for(var j=0;j<ch-1;j++)for(var i=0;i<cw-1;i++){
+      var a=g[j*cw+i],b=g[j*cw+i+1],c=g[(j+1)*cw+i+1],d=g[(j+1)*cw+i];
+      var bits=((a>=th)?1:0)|((b>=th)?2:0)|((c>=th)?4:0)|((d>=th)?8:0);
+      if(!bits||bits===15)continue;
+      var x0=i*S,y0=j*S,pts=[];
+      function lerp(v1,v2,ax,ay,bx,by){var t=(th-v1)/(v2-v1);pts.push([ax+t*(bx-ax),ay+t*(by-ay)])}
+      if((bits&1)!==(bits>>1&1))lerp(a,b,x0,y0,x0+S,y0);
+      if((bits>>1&1)!==(bits>>2&1))lerp(b,c,x0+S,y0,x0+S,y0+S);
+      if((bits>>2&1)!==(bits>>3&1))lerp(c,d,x0+S,y0+S,x0,y0+S);
+      if((bits>>3&1)!==(bits&1))lerp(d,a,x0,y0+S,x0,y0);
+      if(pts.length>=2){cx1.beginPath();cx1.moveTo(pts[0][0],pts[0][1]);cx1.lineTo(pts[1][0],pts[1][1]);cx1.stroke()}
+    }
+  }
+  cx1.restore();
+}
+
+function drawSlice(){
+  cx1.save();cx1.setLineDash([4,4]);cx1.lineWidth=1;
+  cx1.strokeStyle=DK?'rgba(186,117,23,0.5)':'rgba(186,117,23,0.4)';
+  cx1.beginPath();cx1.moveTo(20,H1*0.5);cx1.lineTo(W-20,H1*0.5);cx1.stroke();
+  cx1.setLineDash([]);cx1.font='11px sans-serif';cx1.fillStyle=DK?'rgba(186,117,23,0.7)':'#854F0B';
+  cx1.textAlign='right';cx1.fillText('cross-section line',W-24,H1*0.5-6);cx1.restore();
+}
+
+function drawBarrier(){
+  if(sig>=1.8||sig<0.08)return;
+  var bx=(MA.x+MB.x)/2;cx1.save();
+  cx1.fillStyle=DK?'rgba(255,255,255,0.035)':'rgba(0,0,0,0.025)';cx1.fillRect(bx-30,0,60,H1);
+  cx1.font='11px sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.3)';
+  cx1.textAlign='center';cx1.fillText('Low-density region',bx,14);cx1.restore();
+}
+
+function drawModes(){
+  cx1.save();
+  var modes=[{m:MA,c:'#534AB7',l:'A (w=.4)'},{m:MB,c:'#185FA5',l:'B (w=.6)'}];
+  for(var i=0;i<modes.length;i++){
+    var o=modes[i];
+    cx1.beginPath();cx1.arc(o.m.x,o.m.y,5,0,Math.PI*2);cx1.fillStyle=o.c;cx1.globalAlpha=0.7;cx1.fill();cx1.globalAlpha=1;
+    cx1.font='500 11px sans-serif';cx1.fillStyle=o.c;cx1.textAlign='center';cx1.fillText(o.l,o.m.x,o.m.y-12);
+  }
+  cx1.restore();
+}
+
+function drawParticles(){
+  cx1.save();
+  for(var k=0;k<ps.length;k++){
+    var p=ps[k];
+    if(p.tr.length>2){cx1.beginPath();cx1.moveTo(p.tr[0].x,p.tr[0].y);for(var i=1;i<p.tr.length;i++)cx1.lineTo(p.tr[i].x,p.tr[i].y);
+    cx1.strokeStyle=(p.a&&p.b)?'rgba(15,110,86,0.18)':'rgba(216,90,48,0.14)';cx1.lineWidth=1;cx1.stroke()}
+    cx1.beginPath();cx1.arc(p.x,p.y,3,0,Math.PI*2);cx1.fillStyle=(p.a&&p.b)?'#0F6E56':'#D85A30';cx1.fill();
+  }
+  cx1.restore();
+}
+
+function drawLadder(){
+  if(mode!=='anneal')return;
+  var lx=W-84,ly=16,lh=H1-32;
+  cx1.save();
+  cx1.fillStyle=DK?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.025)';
+  cx1.beginPath();cx1.roundRect(lx-10,ly-6,92,lh+12,6);cx1.fill();
+  cx1.font='500 11px sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.35)';
+  cx1.textAlign='left';cx1.fillText('schedule',lx+4,ly+8);
+  var sp=(lh-34)/(NL-1);
+  for(var i=0;i<NL;i++){
+    var yy=ly+22+i*sp,act=i===lvl,past=i<lvl;
+    cx1.beginPath();cx1.arc(lx+6,yy,act?4.5:2.8,0,Math.PI*2);
+    cx1.fillStyle=act?'#D85A30':past?'#0F6E56':(DK?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.1)');cx1.fill();
+    if(act||past){cx1.font=(act?'500 ':'')+'11px sans-serif';cx1.fillStyle=act?'#D85A30':(DK?'rgba(93,202,165,0.7)':'#0F6E56');cx1.textAlign='left';cx1.fillText(SL[i].toFixed(2),lx+16,yy+4)}
+  }
+  if(lvl<NL-1){var y1=ly+22+lvl*sp,y2=ly+22+(lvl+1)*sp,pr=innerT/TMAX;
+  cx1.beginPath();cx1.moveTo(lx+6,y1);cx1.lineTo(lx+6,y1+(y2-y1)*pr);cx1.strokeStyle='#D85A30';cx1.lineWidth=1.5;cx1.lineCap='round';cx1.stroke()}
+  cx1.restore();
+}
+
+function drawPotential(){
+  var pad={l:50,r:20,t:30,b:26};
+  var pw=W-pad.l-pad.r,ph=H2-pad.t-pad.b;
+
+  cx2.clearRect(0,0,W,H2);
+  cx2.fillStyle=DK?'#131118':'#FAFAF8';cx2.fillRect(0,0,W,H2);
+
+  var NN=200;var xs=[],uV=[];var uMn=Infinity,uMx=-Infinity;
+  for(var i=0;i<NN;i++){var xp=20+(W-40)*i/(NN-1);var d=D1d(xp,sig);var u=-Math.log(Math.max(d,1e-18));xs.push(xp);uV.push(u);if(u<uMn)uMn=u;if(u>uMx)uMx=u}
+  var uR=uMx-uMn||1,dMn=uMn-uR*0.05,dMx=uMn+uR*1.15,dR=dMx-dMn;
+  function toS(xp,u){return[pad.l+(xp-20)/(W-40)*pw,pad.t+(1-(u-dMn)/dR)*ph]}
+
+  cx2.save();cx2.strokeStyle=DK?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.04)';cx2.lineWidth=0.5;
+  for(var i=0;i<=4;i++){var sy=toS(20,dMn+dR*i/4)[1];cx2.beginPath();cx2.moveTo(pad.l,sy);cx2.lineTo(W-pad.r,sy);cx2.stroke()}
+  cx2.restore();
+
+  cx2.save();cx2.beginPath();
+  var fp=[];
+  for(var i=0;i<NN;i++){var pt=toS(xs[i],uV[i]);fp.push(pt);if(i===0)cx2.moveTo(pt[0],pt[1]);else cx2.lineTo(pt[0],pt[1])}
+  cx2.strokeStyle=DK?'#EF9F27':'#BA7517';cx2.lineWidth=2;cx2.stroke();
+  cx2.lineTo(fp[NN-1][0],pad.t+ph);cx2.lineTo(fp[0][0],pad.t+ph);cx2.closePath();
+  cx2.fillStyle=DK?'rgba(239,159,39,0.08)':'rgba(186,117,23,0.06)';cx2.fill();cx2.restore();
+
+  var uA=-Math.log(Math.max(D1d(MA.x,sig),1e-18)),uB=-Math.log(Math.max(D1d(MB.x,sig),1e-18));
+  var ptA=toS(MA.x,uA),ptB=toS(MB.x,uB);
+
+  cx2.save();
+  cx2.beginPath();cx2.arc(ptA[0],ptA[1],5,0,Math.PI*2);cx2.fillStyle='#534AB7';cx2.fill();
+  cx2.beginPath();cx2.arc(ptB[0],ptB[1],5,0,Math.PI*2);cx2.fillStyle='#185FA5';cx2.fill();
+  cx2.font='500 11px sans-serif';cx2.textAlign='center';
+  cx2.fillStyle='#534AB7';cx2.fillText('A',ptA[0],ptA[1]-10);
+  cx2.fillStyle='#185FA5';cx2.fillText('B',ptB[0],ptB[1]-10);cx2.restore();
+
+  var bU=-Infinity,bX=0;var ms=Math.floor(NN*0.3),me=Math.floor(NN*0.7);
+  for(var i=ms;i<me;i++)if(uV[i]>bU){bU=uV[i];bX=xs[i]}
+  var wellU=Math.min(uA,uB),bH=bU-wellU;
+  if(bH>0.3){
+    var bpt=toS(bX,bU),wpt=toS(bX,wellU);
+    cx2.save();cx2.setLineDash([3,3]);cx2.lineWidth=1;
+    cx2.strokeStyle=DK?'rgba(186,117,23,0.5)':'rgba(186,117,23,0.4)';
+    cx2.beginPath();cx2.moveTo(bpt[0],bpt[1]);cx2.lineTo(bpt[0],wpt[1]);cx2.stroke();
+    cx2.setLineDash([]);cx2.font='500 11px sans-serif';cx2.fillStyle=DK?'#FAC775':'#854F0B';cx2.textAlign='left';
+    cx2.fillText('barrier = '+bH.toFixed(1),bpt[0]+6,(bpt[1]+wpt[1])/2+4);cx2.restore();
+  }
+
+  for(var k=0;k<ps.length;k++){
+    var p=ps[k];
+    var up=-Math.log(Math.max(D1d(p.x,sig),1e-18));
+    var spt=toS(p.x,up);
+    cx2.beginPath();cx2.arc(spt[0],spt[1]+(Math.random()-.5)*3,2.2,0,Math.PI*2);
+    cx2.fillStyle=(p.a&&p.b)?'rgba(15,110,86,0.55)':'rgba(216,90,48,0.5)';cx2.fill();
+  }
+
+  cx2.save();cx2.font='11px sans-serif';cx2.fillStyle=DK?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.25)';
+  cx2.textAlign='center';cx2.fillText('x (along mode axis)',W/2,H2-4);
+  cx2.translate(12,H2/2);cx2.rotate(-Math.PI/2);cx2.fillText('U(x) = -log density',0,0);cx2.restore();
+}
+
+function upWeights(){
+  var nA=0,nB=0;
+  for(var k=0;k<ps.length;k++){
+    var p=ps[k];
+    if(Math.hypot(p.x-MA.x,p.y-MA.y)<Math.hypot(p.x-MB.x,p.y-MB.y))nA++;else nB++;
+  }
+  var pA=Math.round(nA/NP*100),pB=100-pA;
+  var ea=document.getElementById('emp-a'),eb=document.getElementById('emp-b');
+  ea.style.width=Math.max(pA,8)+'%';eb.style.width=Math.max(pB,8)+'%';
+  ea.textContent='A: '+pA+'%';eb.textContent='B: '+pB+'%';
+}
+
+function upStats(){
+  var a=alphaFn(sig);
+  document.getElementById('s-sig').textContent=sig.toFixed(2);
+  document.getElementById('s-alp').textContent=a>=1?Math.round(a):a.toFixed(3);
+  document.getElementById('s-step').textContent=mode==='anneal'?(lvl+1)+' / '+NL:'--';
+  document.getElementById('s-phase').textContent=sig>2?'Explore':sig>0.5?'Transition':'Refine';
+  document.getElementById('sig-out').textContent=sig.toFixed(2);
+}
+
+function upNote(){
+  var el=document.getElementById('note');
+  if(mode==='naive'){
+    el.innerHTML='<strong>Naive Langevin (fixed small noise)</strong> &#8212; no annealing schedule. With a single small noise level, the score field inside each mode encodes only local structure and reveals nothing about the other mode\'s mixture weight. Particles get trapped and the empirical A/B ratio drifts from the target 40/60. Compare the weight bars to see this failure.';
+  }else if(mode==='anneal'){
+    var ai=alphaFn(sig);
+    if(lvl<3)el.innerHTML='<strong>Level i='+(lvl+1)+'</strong> &#8212; step size &#945;<sub>i</sub> = &#949; &#183; &#963;<sub>i</sub><sup>2</sup> / &#963;<sub>L</sub><sup>2</sup> = '+Math.round(ai)+' (large steps). At large &#963; the perturbed density fills low-density regions and makes modes less isolated, improving both score estimation and mixing. Particles move freely between both basins.';
+    else if(lvl<7)el.innerHTML='<strong>Level i='+(lvl+1)+'</strong> &#8212; &#945;<sub>i</sub> = '+ai.toFixed(1)+'. The schedule shrinks both &#963; and &#945; together. Modes separate but particles are warm-started from the previous level\'s final positions &#8212; they don\'t need to re-cross the growing barrier. Watch the weight bars: the 40/60 ratio should be approximately maintained.';
+    else el.innerHTML='<strong>Level i='+(lvl+1)+'</strong> &#8212; &#945;<sub>i</sub> = '+ai.toFixed(3)+' (tiny steps, fine refinement). <i>q</i><sub>&#963;</sub> is now close to <i>p</i><sub>data</sub>. The barrier is tall but particles already occupy both wells in roughly the correct proportions from the hot phase. The annealing schedule transferred exploration into refinement.';
+  }else{
+    var ai=alphaFn(sig);
+    if(sig>3)el.innerHTML='<strong>Large &#963;</strong> &#8212; &#945; = '+Math.round(ai)+'. The perturbed density fills low-density regions and makes modes less isolated. This improves both score estimation (training signal everywhere) and Langevin mixing (no barriers to trap walkers). But <i>q</i><sub>&#963;</sub> is too diffuse to approximate <i>p</i><sub>data</sub> alone.';
+    else if(sig>1)el.innerHTML='<strong>Medium &#963;</strong> &#8212; &#945; = '+ai.toFixed(1)+'. Modes start to separate and the potential barrier grows. Watch the barrier height in the bottom panel. Particles can still cross but mixing slows. The mode-weight bars may start drifting from the target.';
+    else if(sig>0.2)el.innerHTML='<strong>Small &#963;</strong> &#8212; &#945; = '+ai.toFixed(2)+'. Deep wells, tall barrier. The score inside each well points only inward and encodes no information about the other mode\'s mixture weight. Particles are trapped &#8212; the <strong>slow mixing</strong> failure. Check the weight bars: they likely diverge from 40/60.';
+    else el.innerHTML='<strong>Tiny &#963;</strong> &#8212; &#945; = '+ai.toFixed(3)+'. <i>q</i><sub>&#963;</sub> closely approximates the true data density. In a real high-dimensional setting, Song 2019 argues the score becomes ill-defined on thin manifolds. This toy 2D mixture stays smooth and full-support at every &#963;, so it does not literally exhibit the manifold problem &#8212; but the mixing failure is fully visible.';
+  }
+}
+
+document.querySelectorAll('.mb').forEach(function(b){b.addEventListener('click',function(){
+  var m=this.dataset.m;mode=m;
+  document.querySelectorAll('.mb').forEach(function(x){x.classList.toggle('on',x.dataset.m===m)});
+  document.getElementById('sig-sl').disabled=m!=='manual';
+  if(m==='anneal'){lvl=0;sig=SL[0];innerT=0;playing=true;document.getElementById('btn-pp').textContent='Pause';initP()}
+  else if(m==='naive'){sig=0.12;document.getElementById('sig-sl').value=Math.round((0.12-0.04)/4.96*100);playing=true;document.getElementById('btn-pp').textContent='Pause';initP()}
+  lastSI=-1;upStats();upNote();upWeights();
+})});
+
+document.getElementById('sig-sl').addEventListener('input',function(){
+  if(mode!=='manual')return;sig=0.04+this.value/100*4.96;lastSI=-1;upStats();upNote();
+});
+document.getElementById('btn-pp').addEventListener('click',function(){playing=!playing;this.textContent=playing?'Pause':'Play'});
+document.getElementById('btn-rst').addEventListener('click',function(){if(mode==='anneal'){lvl=0;sig=SL[0];innerT=0;lastSI=-1}initP();upStats();upNote();upWeights()});
+
+var fc=0;
+function loop(){
+  requestAnimationFrame(loop);
+  if(playing){
+    var a=alphaFn(sig);
+    var sub=substepsFor(a);
+    for(var s=0;s<sub;s++)stepOnce(a);
+    if(mode==='anneal'){
+      innerT++;
+      if(innerT>=TMAX&&lvl<NL-1){lvl++;sig=SL[lvl];innerT=0;lastSI=-1;upNote()}
+      if(lvl>=NL-1&&innerT>=TMAX)innerT=TMAX;
+    }
+  }
+  drawDensity();drawContours();drawBarrier();drawSlice();drawModes();drawLadder();drawParticles();
+  drawPotential();
+  fc++;if(fc%6===0){upStats();upWeights()}
+}
+loop();upNote();
+</script>
