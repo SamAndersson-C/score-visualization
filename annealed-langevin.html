@@ -1,9 +1,5 @@
 
 <style>
-html, body{
-  background:#1a1a1a;
-  color:#e5e5e5;
-}
 .wrap{padding:0.5rem 0}
 .mbar{display:flex;gap:4px;margin-bottom:1rem}
 .mb{font-size:13px;padding:7px 14px;border-radius:var(--border-radius-md);cursor:pointer;border:0.5px solid var(--color-border-tertiary);background:transparent;color:var(--color-text-secondary);transition:all .15s}
@@ -103,7 +99,7 @@ canvas{display:block;width:100%;height:auto}
 </div>
 
 <script>
-var DK=true;
+var DK=matchMedia('(prefers-color-scheme:dark)').matches;
 var DPR=Math.min(window.devicePixelRatio||1,2);
 var W=680,H1=260,H2=155;
 
