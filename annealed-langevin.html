@@ -1,20 +1,139 @@
-
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Annealed Langevin dynamics — Song 2019 explainer</title>
 <style>
-.wrap{padding:0.5rem 0}
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --font-sans:"DM Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --font-mono:"SF Mono","Fira Code",monospace;
+  --border-radius-md:8px;
+  --border-radius-lg:12px;
+  --border-radius-xl:16px;
+}
+
+[data-theme="dark"]{
+  --color-background-primary:#1a1a1e;
+  --color-background-secondary:#232328;
+  --color-background-tertiary:#151517;
+  --color-background-info:rgba(55,138,221,0.12);
+  --color-background-warning:rgba(186,117,23,0.12);
+  --color-background-danger:rgba(226,75,74,0.1);
+  --color-background-success:rgba(29,158,117,0.1);
+  --color-text-primary:#e8e6e0;
+  --color-text-secondary:#9c9a92;
+  --color-text-tertiary:#6e6c66;
+  --color-text-info:#85B7EB;
+  --color-text-warning:#FAC775;
+  --color-text-danger:#F09595;
+  --color-text-success:#5DCAA5;
+  --color-border-tertiary:rgba(255,255,255,0.1);
+  --color-border-secondary:rgba(255,255,255,0.18);
+  --color-border-primary:rgba(255,255,255,0.25);
+  --color-border-info:rgba(55,138,221,0.35);
+}
+
+[data-theme="light"]{
+  --color-background-primary:#ffffff;
+  --color-background-secondary:#f5f4f0;
+  --color-background-tertiary:#eae9e4;
+  --color-background-info:rgba(55,138,221,0.08);
+  --color-background-warning:rgba(186,117,23,0.08);
+  --color-background-danger:rgba(226,75,74,0.06);
+  --color-background-success:rgba(29,158,117,0.06);
+  --color-text-primary:#2c2c2a;
+  --color-text-secondary:#6e6c66;
+  --color-text-tertiary:#9c9a92;
+  --color-text-info:#185FA5;
+  --color-text-warning:#854F0B;
+  --color-text-danger:#A32D2D;
+  --color-text-success:#0F6E56;
+  --color-border-tertiary:rgba(0,0,0,0.1);
+  --color-border-secondary:rgba(0,0,0,0.18);
+  --color-border-primary:rgba(0,0,0,0.25);
+  --color-border-info:rgba(55,138,221,0.35);
+}
+
+html{font-size:16px}
+body{
+  font-family:var(--font-sans);
+  background:var(--color-background-tertiary);
+  color:var(--color-text-primary);
+  line-height:1.6;
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  padding:2rem 1rem;
+  transition:background .2s,color .2s;
+}
+.page{width:100%;max-width:720px}
+
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+.page-title{font-size:18px;font-weight:500}
+.page-sub{font-size:13px;color:var(--color-text-tertiary);margin-top:2px}
+.theme-toggle{
+  font-size:12px;padding:5px 12px;border-radius:var(--border-radius-md);
+  border:0.5px solid var(--color-border-secondary);
+  background:transparent;color:var(--color-text-secondary);
+  cursor:pointer;transition:all .15s;font-family:var(--font-sans);
+}
+.theme-toggle:hover{background:var(--color-background-secondary)}
+
+button{
+  font-family:var(--font-sans);font-size:13px;padding:7px 14px;
+  border-radius:var(--border-radius-md);cursor:pointer;
+  border:0.5px solid var(--color-border-secondary);
+  background:transparent;color:var(--color-text-secondary);
+  transition:all .12s;
+}
+button:hover{background:var(--color-background-secondary)}
+button:active{transform:scale(0.98)}
+
+input[type="range"]{
+  -webkit-appearance:none;appearance:none;
+  height:4px;border-radius:2px;outline:none;
+  background:var(--color-border-secondary);
+  cursor:pointer;
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:18px;height:18px;border-radius:50%;
+  background:var(--color-text-primary);
+  border:2px solid var(--color-background-primary);
+  cursor:pointer;
+}
+input[type="range"]::-moz-range-thumb{
+  width:18px;height:18px;border-radius:50%;border:none;
+  background:var(--color-text-primary);cursor:pointer;
+}
+
 .mbar{display:flex;gap:4px;margin-bottom:1rem}
-.mb{font-size:13px;padding:7px 14px;border-radius:var(--border-radius-md);cursor:pointer;border:0.5px solid var(--color-border-tertiary);background:transparent;color:var(--color-text-secondary);transition:all .15s}
+.mb{
+  font-size:13px;padding:7px 14px;border-radius:var(--border-radius-md);
+  cursor:pointer;border:0.5px solid var(--color-border-tertiary);
+  background:transparent;color:var(--color-text-secondary);transition:all .15s;
+  font-family:var(--font-sans);
+}
 .mb.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
 .mb:hover:not(.on){background:var(--color-background-secondary)}
+
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
 .st{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px}
-.st-l{font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.4px;text-transform:none}
+.st-l{font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.4px}
 .st-v{font-size:20px;font-weight:500;margin-top:2px}
+
 .panels{display:flex;flex-direction:column;gap:2px;margin-bottom:2px}
 .pnl{position:relative;width:100%;border-radius:var(--border-radius-lg);overflow:hidden;border:0.5px solid var(--color-border-tertiary)}
 .pnl:first-child{border-bottom:none;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0}
 .pnl:last-child{border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg)}
 .ptag{position:absolute;top:8px;left:10px;font-size:11px;font-weight:500;padding:3px 8px;border-radius:var(--border-radius-md);z-index:2;pointer-events:none}
 canvas{display:block;width:100%;height:auto}
+
 .mw{margin:12px 0;padding:12px 14px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)}
 .mw-title{font-size:12px;color:var(--color-text-tertiary);letter-spacing:0.4px;margin-bottom:8px}
 .mw-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -22,20 +141,40 @@ canvas{display:block;width:100%;height:auto}
 .mw-label{font-size:12px;color:var(--color-text-secondary);width:64px;text-align:right;flex-shrink:0}
 .mw-track{flex:1;height:22px;display:flex;border-radius:var(--border-radius-md);overflow:hidden}
 .mw-seg{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;transition:width .3s}
-.mw-a{background:#EEEDFE;color:#3C3489}
-.mw-b{background:#E6F1FB;color:#0C447C}
+[data-theme="dark"] .mw-a{background:#3C3489;color:#CECBF6}
+[data-theme="dark"] .mw-b{background:#0C447C;color:#B5D4F4}
+[data-theme="light"] .mw-a{background:#EEEDFE;color:#3C3489}
+[data-theme="light"] .mw-b{background:#E6F1FB;color:#0C447C}
+
 .ctrl-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
 .ctrl-row label{font-size:13px;color:var(--color-text-secondary);white-space:nowrap}
 .ctrl-row span{font-size:13px;font-weight:500;min-width:32px}
+
 .leg{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--color-text-secondary);margin-top:12px}
 .leg-i{display:flex;align-items:center;gap:5px}
 .leg-d{width:8px;height:8px;border-radius:50%}
+
 .nb{font-size:14px;color:var(--color-text-secondary);line-height:1.65;margin-top:12px;padding:10px 14px;border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;border-left:2px solid var(--color-border-info);background:var(--color-background-secondary)}
 .nb strong{font-weight:500;color:var(--color-text-primary)}
 .fn{font-size:11px;color:var(--color-text-tertiary);margin-top:4px;padding:0 2px}
-</style>
 
-<div class="wrap">
+@media(max-width:600px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .mbar{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="page-head">
+  <div>
+    <div class="page-title">Annealed Langevin dynamics</div>
+    <div class="page-sub">Song 2019 &#8212; multimodal mixing explainer</div>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()">Light mode</button>
+</div>
+
 <div class="mbar">
   <div class="mb on" data-m="manual">Explore manually</div>
   <div class="mb" data-m="anneal">Annealed Langevin</div>
@@ -43,8 +182,8 @@ canvas{display:block;width:100%;height:auto}
 </div>
 
 <div class="stats">
-  <div class="st"><div class="st-l">Noise <span style="font-style:italic">&#963;</span><sub>i</sub></div><div class="st-v" id="s-sig">5.00</div></div>
-  <div class="st"><div class="st-l">Step size <span style="font-style:italic">&#945;</span><sub>i</sub></div><div class="st-v" id="s-alp">469</div></div>
+  <div class="st"><div class="st-l">Noise <i>&#963;</i><sub>i</sub></div><div class="st-v" id="s-sig">5.00</div></div>
+  <div class="st"><div class="st-l">Step size <i>&#945;</i><sub>i</sub></div><div class="st-v" id="s-alp">469</div></div>
   <div class="st"><div class="st-l">Ladder step</div><div class="st-v" id="s-step">--</div></div>
   <div class="st"><div class="st-l">Phase</div><div class="st-v" id="s-phase" style="font-size:15px">Explore</div></div>
 </div>
@@ -96,10 +235,21 @@ canvas{display:block;width:100%;height:auto}
 </div>
 
 <div class="nb" id="note">Drag the noise slider to explore. The top panel shows the smoothed density <i>q</i><sub>&#963;</sub> (a 2D Gaussian mixture &#8212; smooth and full-support at every displayed &#963;). The bottom panel shows the potential energy cross-section along the mode axis. The mode-weight bars show whether particles recover the true 40/60 mixture ratio.</div>
+
 </div>
 
 <script>
-var DK=matchMedia('(prefers-color-scheme:dark)').matches;
+function toggleTheme(){
+  var h=document.documentElement;
+  var cur=h.getAttribute('data-theme');
+  var next=cur==='dark'?'light':'dark';
+  h.setAttribute('data-theme',next);
+  document.querySelector('.theme-toggle').textContent=next==='dark'?'Light mode':'Dark mode';
+  DK=next==='dark';
+  lastSI=-1;
+}
+
+var DK=document.documentElement.getAttribute('data-theme')==='dark';
 var DPR=Math.min(window.devicePixelRatio||1,2);
 var W=680,H1=260,H2=155;
 
@@ -122,7 +272,6 @@ var TMAX=90;
 var ps=[];
 
 function alphaFn(s){return EPS*s*s/(SIG_L*SIG_L)}
-
 function totVar(s){return SIG_D2+s*s*SIG_SC}
 function G2d(x,y,cx,cy,s){var v=totVar(s);return Math.exp(-((x-cx)*(x-cx)+(y-cy)*(y-cy))/(2*v))}
 function Dens(x,y,s){return WA*G2d(x,y,MA.x,MA.y,s)+WB*G2d(x,y,MB.x,MB.y,s)}
@@ -200,7 +349,7 @@ function drawSlice(){
   cx1.save();cx1.setLineDash([4,4]);cx1.lineWidth=1;
   cx1.strokeStyle=DK?'rgba(186,117,23,0.5)':'rgba(186,117,23,0.4)';
   cx1.beginPath();cx1.moveTo(20,H1*0.5);cx1.lineTo(W-20,H1*0.5);cx1.stroke();
-  cx1.setLineDash([]);cx1.font='11px sans-serif';cx1.fillStyle=DK?'rgba(186,117,23,0.7)':'#854F0B';
+  cx1.setLineDash([]);cx1.font='11px "DM Sans",sans-serif';cx1.fillStyle=DK?'rgba(186,117,23,0.7)':'#854F0B';
   cx1.textAlign='right';cx1.fillText('cross-section line',W-24,H1*0.5-6);cx1.restore();
 }
 
@@ -208,7 +357,7 @@ function drawBarrier(){
   if(sig>=1.8||sig<0.08)return;
   var bx=(MA.x+MB.x)/2;cx1.save();
   cx1.fillStyle=DK?'rgba(255,255,255,0.035)':'rgba(0,0,0,0.025)';cx1.fillRect(bx-30,0,60,H1);
-  cx1.font='11px sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.3)';
+  cx1.font='11px "DM Sans",sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.35)':'rgba(0,0,0,0.3)';
   cx1.textAlign='center';cx1.fillText('Low-density region',bx,14);cx1.restore();
 }
 
@@ -218,7 +367,7 @@ function drawModes(){
   for(var i=0;i<modes.length;i++){
     var o=modes[i];
     cx1.beginPath();cx1.arc(o.m.x,o.m.y,5,0,Math.PI*2);cx1.fillStyle=o.c;cx1.globalAlpha=0.7;cx1.fill();cx1.globalAlpha=1;
-    cx1.font='500 11px sans-serif';cx1.fillStyle=o.c;cx1.textAlign='center';cx1.fillText(o.l,o.m.x,o.m.y-12);
+    cx1.font='500 11px "DM Sans",sans-serif';cx1.fillStyle=o.c;cx1.textAlign='center';cx1.fillText(o.l,o.m.x,o.m.y-12);
   }
   cx1.restore();
 }
@@ -240,14 +389,14 @@ function drawLadder(){
   cx1.save();
   cx1.fillStyle=DK?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.025)';
   cx1.beginPath();cx1.roundRect(lx-10,ly-6,92,lh+12,6);cx1.fill();
-  cx1.font='500 11px sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.35)';
+  cx1.font='500 11px "DM Sans",sans-serif';cx1.fillStyle=DK?'rgba(255,255,255,0.4)':'rgba(0,0,0,0.35)';
   cx1.textAlign='left';cx1.fillText('schedule',lx+4,ly+8);
   var sp=(lh-34)/(NL-1);
   for(var i=0;i<NL;i++){
     var yy=ly+22+i*sp,act=i===lvl,past=i<lvl;
     cx1.beginPath();cx1.arc(lx+6,yy,act?4.5:2.8,0,Math.PI*2);
     cx1.fillStyle=act?'#D85A30':past?'#0F6E56':(DK?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.1)');cx1.fill();
-    if(act||past){cx1.font=(act?'500 ':'')+'11px sans-serif';cx1.fillStyle=act?'#D85A30':(DK?'rgba(93,202,165,0.7)':'#0F6E56');cx1.textAlign='left';cx1.fillText(SL[i].toFixed(2),lx+16,yy+4)}
+    if(act||past){cx1.font=(act?'500 ':'')+'11px "DM Sans",sans-serif';cx1.fillStyle=act?'#D85A30':(DK?'rgba(93,202,165,0.7)':'#0F6E56');cx1.textAlign='left';cx1.fillText(SL[i].toFixed(2),lx+16,yy+4)}
   }
   if(lvl<NL-1){var y1=ly+22+lvl*sp,y2=ly+22+(lvl+1)*sp,pr=innerT/TMAX;
   cx1.beginPath();cx1.moveTo(lx+6,y1);cx1.lineTo(lx+6,y1+(y2-y1)*pr);cx1.strokeStyle='#D85A30';cx1.lineWidth=1.5;cx1.lineCap='round';cx1.stroke()}
@@ -257,7 +406,6 @@ function drawLadder(){
 function drawPotential(){
   var pad={l:50,r:20,t:30,b:26};
   var pw=W-pad.l-pad.r,ph=H2-pad.t-pad.b;
-
   cx2.clearRect(0,0,W,H2);
   cx2.fillStyle=DK?'#131118':'#FAFAF8';cx2.fillRect(0,0,W,H2);
 
@@ -279,11 +427,10 @@ function drawPotential(){
 
   var uA=-Math.log(Math.max(D1d(MA.x,sig),1e-18)),uB=-Math.log(Math.max(D1d(MB.x,sig),1e-18));
   var ptA=toS(MA.x,uA),ptB=toS(MB.x,uB);
-
   cx2.save();
   cx2.beginPath();cx2.arc(ptA[0],ptA[1],5,0,Math.PI*2);cx2.fillStyle='#534AB7';cx2.fill();
   cx2.beginPath();cx2.arc(ptB[0],ptB[1],5,0,Math.PI*2);cx2.fillStyle='#185FA5';cx2.fill();
-  cx2.font='500 11px sans-serif';cx2.textAlign='center';
+  cx2.font='500 11px "DM Sans",sans-serif';cx2.textAlign='center';
   cx2.fillStyle='#534AB7';cx2.fillText('A',ptA[0],ptA[1]-10);
   cx2.fillStyle='#185FA5';cx2.fillText('B',ptB[0],ptB[1]-10);cx2.restore();
 
@@ -295,7 +442,7 @@ function drawPotential(){
     cx2.save();cx2.setLineDash([3,3]);cx2.lineWidth=1;
     cx2.strokeStyle=DK?'rgba(186,117,23,0.5)':'rgba(186,117,23,0.4)';
     cx2.beginPath();cx2.moveTo(bpt[0],bpt[1]);cx2.lineTo(bpt[0],wpt[1]);cx2.stroke();
-    cx2.setLineDash([]);cx2.font='500 11px sans-serif';cx2.fillStyle=DK?'#FAC775':'#854F0B';cx2.textAlign='left';
+    cx2.setLineDash([]);cx2.font='500 11px "DM Sans",sans-serif';cx2.fillStyle=DK?'#FAC775':'#854F0B';cx2.textAlign='left';
     cx2.fillText('barrier = '+bH.toFixed(1),bpt[0]+6,(bpt[1]+wpt[1])/2+4);cx2.restore();
   }
 
@@ -307,7 +454,7 @@ function drawPotential(){
     cx2.fillStyle=(p.a&&p.b)?'rgba(15,110,86,0.55)':'rgba(216,90,48,0.5)';cx2.fill();
   }
 
-  cx2.save();cx2.font='11px sans-serif';cx2.fillStyle=DK?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.25)';
+  cx2.save();cx2.font='11px "DM Sans",sans-serif';cx2.fillStyle=DK?'rgba(255,255,255,0.3)':'rgba(0,0,0,0.25)';
   cx2.textAlign='center';cx2.fillText('x (along mode axis)',W/2,H2-4);
   cx2.translate(12,H2/2);cx2.rotate(-Math.PI/2);cx2.fillText('U(x) = -log density',0,0);cx2.restore();
 }
@@ -385,3 +532,5 @@ function loop(){
 }
 loop();upNote();
 </script>
+</body>
+</html>
