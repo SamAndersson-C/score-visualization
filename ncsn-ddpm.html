@@ -1,0 +1,413 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px;background:#fff;color:#1a1a1a}
+@media(prefers-color-scheme:dark){body{background:#1a1a1a;color:#e5e5e5}}
+.wrap{display:flex;flex-wrap:wrap;gap:20px}
+.panel{width:326px}
+.panel-label{font-weight:500;font-size:14px;margin:0 0 3px}
+.panel-sub{font-size:12px;color:#888;margin:0 0 6px;line-height:1.4}
+.legend{font-size:11px;color:#888;margin:3px 0 0;line-height:1.5}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;vertical-align:middle}
+.legend-ring{display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px dashed rgba(83,74,183,0.4);margin-right:3px;vertical-align:middle}
+canvas{border:0.5px solid #ddd;border-radius:8px;width:100%;aspect-ratio:1}
+@media(prefers-color-scheme:dark){canvas{border-color:#333}}
+button{font-family:inherit;font-size:12px;padding:5px 12px;border:0.5px solid #bbb;border-radius:8px;background:transparent;cursor:pointer;margin:6px 3px 0 0;color:inherit}
+button:hover{background:rgba(0,0,0,0.05)}
+@media(prefers-color-scheme:dark){button{border-color:#555}button:hover{background:rgba(255,255,255,0.08)}}
+.ctrl-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.ctrl-label{font-size:12px;color:#888}
+.ctrl-val{font-size:12px;font-weight:500;min-width:70px;text-align:right}
+.sigma-bar{display:flex;gap:2px;margin:5px 0;height:5px}
+.sigma-pip{flex:1;border-radius:3px;transition:background 0.12s}
+.tab-row{display:flex;gap:0;margin:0 0 6px}
+.tab{font-family:inherit;font-size:11px;padding:6px 10px;border:0.5px solid #bbb;background:transparent;cursor:pointer;color:inherit;margin:0;white-space:nowrap}
+.tab:first-child{border-radius:8px 0 0 8px}
+.tab:last-child{border-radius:0 8px 8px 0;border-left:none}
+.tab:not(:first-child):not(:last-child){border-left:none}
+.tab.active{background:#534AB7;color:#fff;border-color:#534AB7}
+@media(prefers-color-scheme:dark){.tab{border-color:#555}.tab.active{background:#7F77DD;border-color:#7F77DD;color:#1a1a1a}}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500;vertical-align:middle;margin-left:4px;background:rgba(83,74,183,0.1);color:#534AB7}
+@media(prefers-color-scheme:dark){.badge{background:rgba(175,169,236,0.15);color:#AFA9EC}}
+.info-box{font-size:11px;color:#888;line-height:1.5;margin:6px 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,0.03)}
+@media(prefers-color-scheme:dark){.info-box{background:rgba(255,255,255,0.04)}}
+</style>
+
+<div class="wrap">
+<div class="panel">
+<p class="panel-label">Score field <span class="badge">related denoising objectives</span></p>
+<div class="tab-row">
+<button class="tab active" id="fTabN" onclick="setFieldMode('ncsn')">NCSN (Song 2019)</button>
+<button class="tab" id="fTabD" onclick="setFieldMode('ddpm')">DDPM (Ho 2020)</button>
+</div>
+<canvas id="cvF" width="326" height="326"></canvas>
+<div class="ctrl-row">
+<span class="ctrl-label" id="sliderLabel">noise level &sigma;</span>
+<input type="range" id="sigSlider" min="0" max="100" value="30" step="1" oninput="onSlider()">
+<span class="ctrl-val" id="sliderVal"></span>
+</div>
+<div class="info-box" id="fieldInfo"></div>
+<p class="legend" id="fieldLegend"></p>
+</div>
+
+<div class="panel">
+<p class="panel-label">Sampler</p>
+<div class="tab-row">
+<button class="tab active" id="sTabSample" onclick="setSamplerAlgo('sample')">Sampling</button>
+<button class="tab" id="sTabInpaint" onclick="setSamplerAlgo('inpaint')">Inpainting (toy)</button>
+</div>
+<div class="tab-row" style="margin-top:-2px">
+<button class="tab active" id="sTabN" onclick="setSamplerMethod('ncsn')">NCSN</button>
+<button class="tab" id="sTabD" onclick="setSamplerMethod('ddpm')">DDPM</button>
+</div>
+<canvas id="cvA" width="326" height="326"></canvas>
+<div class="sigma-bar" id="sigBar"></div>
+<div class="info-box" id="samplerInfo"></div>
+<div>
+<button onclick="runOne()">Run 1 chain</button>
+<button onclick="runBatch()">Run 20 chains</button>
+<button onclick="clearAll()">Clear</button>
+</div>
+<p class="legend"><span class="legend-dot" style="background:rgba(83,74,183,0.4)"></span>Start <span class="legend-dot" style="background:#D85A30"></span>Pre-denoise <span class="legend-dot" style="background:#1D9E75"></span>Denoised estimate</p>
+</div>
+</div>
+
+<script>
+const W=326,H=326,CX=W/2,CY=H/2;
+const modes=[{x:100,y:130},{x:220,y:200}];
+const dark=matchMedia('(prefers-color-scheme:dark)').matches;
+const arC=dark?'rgba(180,178,169,':'rgba(100,100,96,';
+const MASK_X=160;
+
+let fieldMode='ncsn', samplerAlgo='sample', samplerMethod='ncsn';
+
+/* ═══ NCSN schedule (Song 2019) ═══
+   Geometric sigma ladder from sigma_1=80 to sigma_L=8.
+   Step size: alpha_i = eps * sigma_i^2 / sigma_L^2 (Song Eq.) */
+const nL=10, nT=20, nS1=80, nSL=8, nEps=0.5;
+const nSig=[];
+for(let i=0;i<nL;i++) nSig.push(nS1*Math.pow(nSL/nS1,i/(nL-1)));
+
+/* ═══ DDPM schedule (Ho 2020) in pixel space ═══
+   Forward: x_t = sqrt(ab_t)*x_0 + sqrt(1-ab_t)*S*eps, eps~N(0,I)
+   S=80 is a pixel-scale factor so that:
+     at t=0:   eff_sigma = sqrt(1-ab_0)*S ≈ 2.5 px (nearly clean)
+     at t=T-1: eff_sigma = sqrt(1-ab_T)*S ≈ 80 px  (mostly noise)
+   This makes DDPM's noise range comparable to NCSN's [8,80]. */
+const dT=200, S=80;
+const betaS=1e-4, betaE=0.02;
+const bt=[],at=[],ab=[];
+for(let t=0;t<dT;t++){bt[t]=betaS+(betaE-betaS)*t/(dT-1);at[t]=1-bt[t];}
+ab[0]=at[0];
+for(let t=1;t<dT;t++) ab[t]=ab[t-1]*at[t];
+
+/* ═══ Score fields ═══ */
+// NCSN: score of mixture of Gaussians N(x_k, sigma^2 I) in pixel space
+function ncsnScore(px,py,sig){
+  let sx=0,sy=0,tw=0;
+  const s2=sig*sig;
+  for(const m of modes){
+    const dx=px-m.x,dy=py-m.y;
+    const w=Math.exp(-(dx*dx+dy*dy)/(2*s2));
+    tw+=w; sx+=w*(-dx/s2); sy+=w*(-dy/s2);
+  }
+  if(tw>1e-15){sx/=tw;sy/=tw;}
+  return[sx,sy];
+}
+
+// DDPM: score of mixture of Gaussians N(sqrt(ab_t)*x_k, (1-ab_t)*S^2 I) in pixel space
+function ddpmScore(px,py,t){
+  const sab=Math.sqrt(ab[t]);
+  const v=(1-ab[t])*S*S;
+  let sx=0,sy=0,tw=0;
+  for(const m of modes){
+    const mx=CX+(m.x-CX)*sab, my=CY+(m.y-CY)*sab;
+    const dx=px-mx,dy=py-my;
+    const w=Math.exp(-(dx*dx+dy*dy)/(2*v));
+    tw+=w; sx+=w*(-dx/v); sy+=w*(-dy/v);
+  }
+  if(tw>1e-15){sx/=tw;sy/=tw;}
+  return[sx,sy];
+}
+
+function ddpmMeans(t){
+  const sab=Math.sqrt(ab[t]);
+  return modes.map(m=>({x:CX+(m.x-CX)*sab,y:CY+(m.y-CY)*sab}));
+}
+
+/* ═══ Drawing helpers ═══ */
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function cl(v){return Math.max(5,Math.min(W-5,v));}
+
+function drawArrows(ctx,fn,scl){
+  const step=22;
+  for(let x=step;x<W;x+=step)for(let y=step;y<H;y+=step){
+    const[sx,sy]=fn(x,y);
+    const mag=Math.sqrt(sx*sx+sy*sy);
+    const len=Math.min(mag*scl,10);
+    if(len<0.4)continue;
+    const nx=sx/(mag||1),ny=sy/(mag||1);
+    const ex=x+nx*len,ey=y+ny*len;
+    const op=Math.min(0.1+len/10*0.45,0.5);
+    ctx.strokeStyle=arC+op+')';ctx.lineWidth=0.7;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.stroke();
+    const hl=2.5,ha=0.45,a=Math.atan2(ny,nx);
+    ctx.beginPath();
+    ctx.moveTo(ex,ey);ctx.lineTo(ex-hl*Math.cos(a-ha),ey-hl*Math.sin(a-ha));
+    ctx.moveTo(ex,ey);ctx.lineTo(ex-hl*Math.cos(a+ha),ey-hl*Math.sin(a+ha));
+    ctx.stroke();
+  }
+}
+
+function drawClouds(ctx,centers,r){
+  for(const c of centers){
+    for(let i=3;i>=1;i--){
+      ctx.beginPath();ctx.arc(c.x,c.y,Math.min(r*i*0.85,200),0,Math.PI*2);
+      ctx.fillStyle='rgba(175,169,236,'+(0.025*(4-i))+')';ctx.fill();
+      if(i===3){ctx.strokeStyle='rgba(127,119,221,0.1)';ctx.lineWidth=0.5;ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);}
+    }
+  }
+}
+
+function drawDots(ctx,pts,r,f){for(const p of pts){ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle=f;ctx.fill();}}
+
+function drawGhost(ctx,pts){
+  for(const p of pts){ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.strokeStyle='rgba(83,74,183,0.3)';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);}
+}
+
+/* ═══ Left panel ═══ */
+function drawLeft(){
+  const ctx=document.getElementById('cvF').getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  const v=+document.getElementById('sigSlider').value;
+  if(fieldMode==='ncsn'){
+    const sig=nSL+(nS1-nSL)*(v/100);
+    drawClouds(ctx,modes,sig);
+    drawDots(ctx,modes,5,'#534AB7');
+    drawArrows(ctx,(x,y)=>ncsnScore(x,y,sig),sig*sig*0.8);
+    document.getElementById('sliderVal').textContent='\u03c3 = '+Math.round(sig);
+  } else {
+    const ti=Math.round(v/100*(dT-1));
+    const ms=ddpmMeans(ti);
+    const es=Math.sqrt(1-ab[ti])*S;
+    drawClouds(ctx,ms,es);
+    drawGhost(ctx,modes);
+    drawDots(ctx,ms,5,'#534AB7');
+    drawArrows(ctx,(x,y)=>ddpmScore(x,y,ti),(1-ab[ti])*S*S*0.8);
+    document.getElementById('sliderVal').textContent='\u0101\u0304t='+ab[ti].toFixed(2)+' \u03c3eff\u2248'+Math.round(es);
+  }
+}
+function onSlider(){drawLeft();}
+
+function setFieldMode(m){
+  fieldMode=m;
+  document.getElementById('fTabN').className='tab'+(m==='ncsn'?' active':'');
+  document.getElementById('fTabD').className='tab'+(m==='ddpm'?' active':'');
+  document.getElementById('sliderLabel').textContent=m==='ncsn'?'noise level \u03c3':'timestep (noise \u2192)';
+  document.getElementById('fieldInfo').innerHTML=m==='ncsn'
+    ?'<strong>NCSN (Song 2019):</strong> x\u0303 = x + \u03c3\u03b5. Additive noise only. Clean modes stay at original positions.'
+    :'<strong>DDPM (Ho 2020):</strong> x<sub>t</sub> = \u221a\u0101\u0304<sub>t</sub>\u00b7x<sub>0</sub> + \u221a(1\u2212\u0101\u0304<sub>t</sub>)\u00b7S\u00b7\u03b5. Signal <em>shrinks toward center</em> while noise grows. S='+S+' maps unit noise to pixel space. Solid = noisy means, dashed = true clean positions.';
+  document.getElementById('fieldLegend').innerHTML=m==='ncsn'
+    ?'<span class="legend-dot" style="background:#534AB7"></span>Clean data <span class="legend-dot" style="background:rgba(175,169,236,0.3)"></span>Cloud at \u03c3 <span class="legend-dot" style="background:#888"></span>Score field'
+    :'<span class="legend-dot" style="background:#534AB7"></span>Noisy mean \u221a\u0101\u0304<sub>t</sub>\u00b7x<sub>k</sub> <span class="legend-ring"></span>Original x<sub>k</sub> <span class="legend-dot" style="background:#888"></span>Score field';
+  drawLeft();
+}
+
+/* ═══ Right panel state ═══ */
+let pipEls=[], trails=[], active=null, af=null;
+
+function buildBar(){
+  const bar=document.getElementById('sigBar');bar.innerHTML='';pipEls=[];
+  const n=samplerMethod==='ncsn'?nL:20;
+  for(let i=0;i<n;i++){const d=document.createElement('div');d.className='sigma-pip';d.style.background=dark?'#333':'#e5e5e5';bar.appendChild(d);pipEls.push(d);}
+}
+function hlPip(idx){for(let i=0;i<pipEls.length;i++){pipEls[i].style.background=i<idx?'#534AB7':i===idx?'#D85A30':dark?'#333':'#e5e5e5';}}
+
+function updateTabs(){
+  document.getElementById('sTabSample').textContent=samplerMethod==='ncsn'?'Annealed Langevin (Alg 1)':'Reverse chain (Ho Alg 2)';
+  document.getElementById('sTabSample').className='tab'+(samplerAlgo==='sample'?' active':'');
+  document.getElementById('sTabInpaint').className='tab'+(samplerAlgo==='inpaint'?' active':'');
+  document.getElementById('sTabN').className='tab'+(samplerMethod==='ncsn'?' active':'');
+  document.getElementById('sTabD').className='tab'+(samplerMethod==='ddpm'?' active':'');
+}
+
+function updateInfo(){
+  const el=document.getElementById('samplerInfo');
+  if(samplerMethod==='ncsn'){
+    el.innerHTML=samplerAlgo==='sample'
+      ?'<strong>Song 2019 Alg 1:</strong> x \u2192 x + (\u03b1<sub>i</sub>/2)\u00b7s(x,\u03c3<sub>i</sub>) + \u221a\u03b1<sub>i</sub>\u00b7z, with \u03b1<sub>i</sub>=\u03b5\u03c3<sub>i</sub>\u00b2/\u03c3<sub>L</sub>\u00b2. '+nL+' levels \u00d7 '+nT+' steps. Tweedie: x + \u03c3<sub>L</sub>\u00b2\u00b7s(x,\u03c3<sub>L</sub>).'
+      :'<strong>Toy inpainting:</strong> Alg 1 + clamp observed coordinate after each step. <em>Heuristic \u2014 not from Song 2019. Later score-SDE work formalizes conditional sampling differently.</em>';
+  } else {
+    el.innerHTML=samplerAlgo==='sample'
+      ?'<strong>Ho 2020 Alg 2 (reverse chain):</strong> r<sub>t</sub>=x<sub>t</sub>\u2212c. x<sub>t\u22121</sub> = c + (r<sub>t</sub> + \u03b2<sub>t</sub>S\u00b2\u00b7s<sub>t</sub>)/\u221a\u03b1<sub>t</sub> + \u221a\u03b2<sub>t</sub>\u00b7S\u00b7z. '+dT+' steps. Green dot: x\u0302<sub>0</sub> from <em>pre-final</em> noisy state via Tweedie in centered coords.'
+      :'<strong>Toy inpainting:</strong> Reverse chain + clamp observed coordinate. <em>Heuristic \u2014 not from Ho 2020.</em>';
+  }
+}
+
+function setSamplerAlgo(m){samplerAlgo=m;clearAll();updateTabs();updateInfo();buildBar();drawRight();}
+function setSamplerMethod(m){samplerMethod=m;clearAll();updateTabs();updateInfo();buildBar();drawRight();}
+
+/* ═══ Right panel draw ═══ */
+function drawRight(){
+  const ctx=document.getElementById('cvA').getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  if(samplerMethod==='ncsn'){
+    const sig=active?active.sig:nSig[Math.floor(nL/2)];
+    drawArrows(ctx,(x,y)=>ncsnScore(x,y,sig),sig*sig*0.8);
+  } else {
+    const ti=active?active.ti:Math.floor(dT/2);
+    drawArrows(ctx,(x,y)=>ddpmScore(x,y,ti),(1-ab[ti])*S*S*0.8);
+  }
+  if(!active) for(const m of modes){
+    ctx.beginPath();ctx.arc(m.x,m.y,6,0,Math.PI*2);
+    ctx.fillStyle='rgba(83,74,183,0.1)';ctx.fill();ctx.strokeStyle='rgba(83,74,183,0.2)';ctx.lineWidth=0.5;ctx.stroke();
+  }
+  if(samplerAlgo==='inpaint'){
+    ctx.fillStyle=dark?'rgba(29,158,117,0.06)':'rgba(29,158,117,0.05)';
+    ctx.fillRect(MASK_X-12,0,24,H);
+    ctx.strokeStyle='rgba(29,158,117,0.35)';ctx.lineWidth=0.5;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(MASK_X,0);ctx.lineTo(MASK_X,H);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=dark?'rgba(29,158,117,0.6)':'rgba(29,158,117,0.5)';
+    ctx.font='500 11px -apple-system,sans-serif';ctx.fillText('observed x',MASK_X+16,16);
+  }
+  for(const tr of trails) drawTrail(ctx,tr);
+  if(active&&active.pts.length>1) drawActive(ctx);
+}
+
+function tColor(f){return'rgba('+Math.round(83+133*f)+','+Math.round(74+16*f)+','+Math.round(183-135*f)+',';}
+
+function drawTrail(ctx,tr){
+  if(tr.pts.length<2)return;
+  ctx.beginPath();ctx.arc(tr.pts[0][0],tr.pts[0][1],2.5,0,Math.PI*2);ctx.fillStyle='rgba(83,74,183,0.25)';ctx.fill();
+  for(let i=1;i<tr.pts.length;i++){
+    const f=i/tr.pts.length;
+    ctx.strokeStyle=tColor(f)+(0.12+0.4*f)+')';ctx.lineWidth=0.5+0.8*f;
+    ctx.beginPath();ctx.moveTo(tr.pts[i-1][0],tr.pts[i-1][1]);ctx.lineTo(tr.pts[i][0],tr.pts[i][1]);ctx.stroke();
+  }
+  const last=tr.pts[tr.pts.length-1];
+  ctx.beginPath();ctx.arc(last[0],last[1],4,0,Math.PI*2);ctx.fillStyle='#D85A30';ctx.fill();
+  if(tr.dn){
+    ctx.strokeStyle='#1D9E75';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(last[0],last[1]);ctx.lineTo(tr.dn[0],tr.dn[1]);ctx.stroke();
+    ctx.beginPath();ctx.arc(tr.dn[0],tr.dn[1],4,0,Math.PI*2);ctx.fillStyle='#1D9E75';ctx.fill();
+  }
+}
+
+function drawActive(ctx){
+  const a=active;
+  for(let i=1;i<a.pts.length;i++){
+    const f=i/a.pts.length;
+    ctx.strokeStyle=tColor(f)+(0.1+0.55*f)+')';ctx.lineWidth=0.8+f;
+    ctx.beginPath();ctx.moveTo(a.pts[i-1][0],a.pts[i-1][1]);ctx.lineTo(a.pts[i][0],a.pts[i][1]);ctx.stroke();
+  }
+  const last=a.pts[a.pts.length-1];
+  ctx.beginPath();ctx.arc(last[0],last[1],5,0,Math.PI*2);ctx.fillStyle='#D85A30';ctx.fill();
+  ctx.strokeStyle='rgba(216,90,48,0.35)';ctx.lineWidth=0.8;ctx.stroke();
+}
+
+/* ═══ Clamp for toy inpainting ═══ */
+function doClamp(x,y,nm){return[cl(MASK_X+nm*gauss()),y];}
+
+/* ═══ NCSN sampler: Song 2019 Algorithm 1 ═══
+   Update: x <- x + (alpha_i/2)*s_theta(x,sigma_i) + sqrt(alpha_i)*z
+   alpha_i = eps * sigma_i^2 / sigma_L^2
+   Tweedie denoise: x + sigma_L^2 * s_theta(x, sigma_L) */
+function genNCSN(anim){
+  let x=Math.random()*W, y=Math.random()*H;
+  const pts=[[x,y]];
+  function step(sig){
+    const ai=nEps*sig*sig/(nSL*nSL);
+    const[sx,sy]=ncsnScore(x,y,sig);
+    x=cl(x+(ai/2)*sx+Math.sqrt(ai)*gauss());
+    y=cl(y+(ai/2)*sy+Math.sqrt(ai)*gauss());
+    pts.push([x,y]);
+    if(samplerAlgo==='inpaint'){const c=doClamp(x,y,sig*0.3);x=c[0];y=c[1];pts.push([x,y]);}
+  }
+  function denoise(){
+    const sig=nSig[nL-1],s2=sig*sig;
+    const[sx,sy]=ncsnScore(x,y,sig);
+    return[cl(x+s2*sx),cl(y+s2*sy)];
+  }
+  if(!anim){
+    for(let si=0;si<nL;si++)for(let t=0;t<nT;t++) step(nSig[si]);
+    trails.push({pts,dn:denoise()});return;
+  }
+  let si=0,ti=0;
+  active={pts,sig:nSig[0]};hlPip(0);
+  function tick(){
+    for(let b=0;b<2;b++){
+      if(si>=nL){trails.push({pts:[...pts],dn:denoise()});active=null;drawRight();hlPip(nL-1);return;}
+      active.sig=nSig[si];step(nSig[si]);
+      ti++;if(ti>=nT){ti=0;si++;hlPip(Math.min(si,nL-1));}
+    }
+    drawRight();af=requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+/* ═══ DDPM sampler: Ho 2020 Algorithm 2 (reverse chain) in pixel space ═══
+   Forward: x_t = sqrt(ab_t)*x_0 + sqrt(1-ab_t)*S*eps
+   All DDPM algebra uses centered residuals r_t = x_t - c, c=(CX,CY),
+   because the forward process shrinks means toward (CX,CY), not the origin.
+   
+   Reverse step in residual coords:
+     r_{t-1} = (1/sqrt(a_t)) * (r_t + beta_t * S^2 * score) + sqrt(beta_t) * S * z
+   Then x_{t-1} = c + r_{t-1}. No noise at t=0.
+   
+   Tweedie clean estimate (applied to pre-final noisy state):
+     r0_hat = (r_t + (1-ab_t)*S^2 * score) / sqrt(ab_t)
+     x0_hat = c + r0_hat */
+function ddpmCleanEstimate(xC,yC,t){
+  const sab=Math.sqrt(ab[t]);
+  const[sx,sy]=ddpmScore(xC,yC,t);
+  const rx=xC-CX, ry=yC-CY;
+  return[cl(CX+(rx+(1-ab[t])*S*S*sx)/sab),cl(CY+(ry+(1-ab[t])*S*S*sy)/sab)];
+}
+
+function genDDPM(anim){
+  let x=CX+S*gauss(), y=CY+S*gauss();
+  const pts=[[x,y]];
+  const pc=pipEls.length;
+  let preFinal=null;
+
+  function revStep(t){
+    if(t===0) preFinal=[x,y];
+    const[sx,sy]=ddpmScore(x,y,t);
+    const sa=Math.sqrt(at[t]);
+    const rx=x-CX, ry=y-CY;
+    const mx=CX+(rx+bt[t]*S*S*sx)/sa;
+    const my=CY+(ry+bt[t]*S*S*sy)/sa;
+    if(t>0){const ns=Math.sqrt(bt[t])*S;x=cl(mx+ns*gauss());y=cl(my+ns*gauss());}
+    else{x=cl(mx);y=cl(my);}
+    pts.push([x,y]);
+    if(samplerAlgo==='inpaint'){const es=Math.sqrt(1-ab[t])*S*0.3;const c=doClamp(x,y,Math.max(es,1));x=c[0];y=c[1];pts.push([x,y]);}
+  }
+
+  function denoise(){
+    if(preFinal) return ddpmCleanEstimate(preFinal[0],preFinal[1],0);
+    return null;
+  }
+
+  if(!anim){
+    for(let t=dT-1;t>=0;t--) revStep(t);
+    trails.push({pts,dn:denoise()});return;
+  }
+  let st=dT-1;
+  active={pts,ti:st};hlPip(0);
+  function tick(){
+    for(let b=0;b<3;b++){
+      if(st<0){trails.push({pts:[...pts],dn:denoise()});active=null;drawRight();hlPip(pc-1);return;}
+      active.ti=st;revStep(st);st--;
+      hlPip(Math.min(Math.floor(((dT-1-st)/dT)*pc),pc-1));
+    }
+    drawRight();af=requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+/* ═══ Controls ═══ */
+function runOne(){if(af)cancelAnimationFrame(af);samplerMethod==='ncsn'?genNCSN(true):genDDPM(true);}
+function runBatch(){if(af)cancelAnimationFrame(af);active=null;for(let i=0;i<20;i++){samplerMethod==='ncsn'?genNCSN(false):genDDPM(false);}hlPip(pipEls.length-1);drawRight();}
+function clearAll(){if(af)cancelAnimationFrame(af);trails=[];active=null;hlPip(-1);drawRight();}
+
+/* ═══ Init ═══ */
+setFieldMode('ncsn');buildBar();updateTabs();updateInfo();drawRight();
+</script>
