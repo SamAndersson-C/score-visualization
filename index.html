@@ -1,192 +1,46 @@
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px;background:#fff;color:#1a1a1a}
-@media(prefers-color-scheme:dark){body{background:#1a1a1a;color:#e5e5e5}}
-.wrap{display:flex;flex-wrap:wrap;gap:16px}
-.panel{display:inline-block;vertical-align:top;width:320px}
-.panel-label{font-weight:500;font-size:14px;margin:0 0 4px}
-.panel-sub{font-size:12px;color:#888;margin:0 0 8px}
-.legend{font-size:12px;color:#888;margin:4px 0 0}
-.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
-canvas{border:0.5px solid #ddd;border-radius:8px;width:100%;aspect-ratio:1}
-@media(prefers-color-scheme:dark){canvas{border-color:#333}}
-button{font-family:inherit;font-size:13px;padding:6px 14px;border:0.5px solid #bbb;border-radius:8px;background:transparent;cursor:pointer;margin:8px 4px 0 0;color:inherit}
-button:hover{background:rgba(0,0,0,0.05)}
-@media(prefers-color-scheme:dark){button{border-color:#555}button:hover{background:rgba(255,255,255,0.08)}}
-</style>
-
-<div class="wrap">
-<div class="panel">
-<p class="panel-label">Training produced this</p>
-<p class="panel-sub">Clean points + clouds → the network learned a score field</p>
-<canvas id="cvT" width="320" height="320"></canvas>
-<p class="legend"><span class="legend-dot" style="background:#534AB7"></span>Clean data (training only) <span class="legend-dot" style="background:rgba(175,169,236,0.4)"></span>Clouds (training only)</p>
-<p class="legend"><span class="legend-dot" style="background:#888"></span>Learned score field (arrows)</p>
-</div>
-
-<div class="panel">
-<p class="panel-label">Sampling uses only the arrows</p>
-<p class="panel-sub">Start from random noise. Follow arrows + add jitter. Repeat.</p>
-<canvas id="cvS" width="320" height="320"></canvas>
-<p class="legend"><span class="legend-dot" style="background:#D85A30"></span>Langevin chain (the sample being born)</p>
-<p class="legend"><span class="legend-dot" style="background:rgba(213,90,48,0.2)"></span>Trail of past positions</p>
-<div>
-<button id="btnGo" onclick="runSample()">Drop a new sample</button>
-<button onclick="runMany()">Drop 30 samples</button>
-<button onclick="clearSamples()">Clear</button>
-</div>
-</div>
-</div>
-
-<script>
-const W=320,S=320;
-const modes=[{x:100,y:130,s:38},{x:220,y:200,s:42}];
-const dark=matchMedia('(prefers-color-scheme:dark)').matches;
-const arrowC=dark?'rgba(180,178,169,':'rgba(100,100,96,';
-
-function scoreAt(px,py){
-  let sx=0,sy=0,totalW=0;
-  for(const m of modes){
-    const dx=px-m.x,dy=py-m.y;
-    const d2=dx*dx+dy*dy;
-    const w=Math.exp(-d2/(2*m.s*m.s));
-    totalW+=w;
-    sx+= w*(-dx/(m.s*m.s));
-    sy+= w*(-dy/(m.s*m.s));
-  }
-  if(totalW>1e-12){sx/=totalW;sy/=totalW;}
-  return[sx,sy];
-}
-
-function drawArrows(ctx){
-  const step=24;
-  for(let x=step;x<W;x+=step){
-    for(let y=step;y<S;y+=step){
-      const[sx,sy]=scoreAt(x,y);
-      const mag=Math.sqrt(sx*sx+sy*sy);
-      const maxLen=10;
-      const len=Math.min(mag*120,maxLen);
-      if(len<1)continue;
-      const nx=sx/(mag||1),ny=sy/(mag||1);
-      const ex=x+nx*len,ey=y+ny*len;
-      const op=Math.min(0.15+mag*8,0.55);
-      ctx.strokeStyle=arrowC+op+')';
-      ctx.lineWidth=0.8;
-      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.stroke();
-      const hl=3,ha=0.45;
-      ctx.beginPath();
-      ctx.moveTo(ex,ey);
-      ctx.lineTo(ex-hl*Math.cos(Math.atan2(ny,nx)-ha),ey-hl*Math.sin(Math.atan2(ny,nx)-ha));
-      ctx.moveTo(ex,ey);
-      ctx.lineTo(ex-hl*Math.cos(Math.atan2(ny,nx)+ha),ey-hl*Math.sin(Math.atan2(ny,nx)+ha));
-      ctx.stroke();
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Score-based model visualizations</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 800px;
+      margin: 48px auto;
+      padding: 0 20px;
+      line-height: 1.5;
+      color: #1a1a1a;
     }
-  }
-}
-
-function drawTraining(){
-  const ctx=document.getElementById('cvT').getContext('2d');
-  ctx.clearRect(0,0,W,S);
-  for(const m of modes){
-    for(let r=3;r>=1;r--){
-      const rad=m.s*(r*1.1);
-      ctx.beginPath();ctx.arc(m.x,m.y,rad,0,Math.PI*2);
-      ctx.fillStyle='rgba(175,169,236,'+(0.04*(4-r))+')';
-      ctx.fill();
-      if(r===3){ctx.strokeStyle='rgba(127,119,221,0.15)';ctx.lineWidth=0.5;ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);}
+    h1 { margin-bottom: 8px; }
+    p { color: #555; }
+    .card {
+      display: block;
+      padding: 16px 18px;
+      margin: 16px 0;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      text-decoration: none;
+      color: inherit;
     }
-    ctx.beginPath();ctx.arc(m.x,m.y,5,0,Math.PI*2);
-    ctx.fillStyle='#534AB7';ctx.fill();
-  }
-  drawArrows(ctx);
-}
+    .card:hover { background: #f8f8f8; }
+    .title { font-weight: 600; margin-bottom: 4px; }
+    .desc { color: #666; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Score-based model visualizations</h1>
+  <p>Interactive visuals based on Song (2019) and diffusion models.</p>
 
-let trails=[];
-let activeChain=null;
-let animFrame=null;
+  <a class="card" href="./ncsn-ddpm.html">
+    <div class="title">NCSN vs DDPM</div>
+    <div class="desc">Compare score fields and sampling behavior.</div>
+  </a>
 
-function drawSampling(){
-  const ctx=document.getElementById('cvS').getContext('2d');
-  ctx.clearRect(0,0,W,S);
-  drawArrows(ctx);
-  for(const tr of trails){
-    if(tr.length<2)continue;
-    for(let i=1;i<tr.length;i++){
-      const op=0.08+0.15*(i/tr.length);
-      ctx.strokeStyle='rgba(216,90,48,'+op+')';
-      ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(tr[i-1][0],tr[i-1][1]);ctx.lineTo(tr[i][0],tr[i][1]);ctx.stroke();
-    }
-    const last=tr[tr.length-1];
-    ctx.beginPath();ctx.arc(last[0],last[1],4,0,Math.PI*2);
-    ctx.fillStyle='#D85A30';ctx.fill();
-  }
-  if(activeChain&&activeChain.length>1){
-    for(let i=1;i<activeChain.length;i++){
-      const op=0.1+0.5*(i/activeChain.length);
-      ctx.strokeStyle='rgba(216,90,48,'+op+')';
-      ctx.lineWidth=1.5;
-      ctx.beginPath();ctx.moveTo(activeChain[i-1][0],activeChain[i-1][1]);ctx.lineTo(activeChain[i][0],activeChain[i][1]);ctx.stroke();
-    }
-    const last=activeChain[activeChain.length-1];
-    ctx.beginPath();ctx.arc(last[0],last[1],5.5,0,Math.PI*2);
-    ctx.fillStyle='#D85A30';ctx.fill();
-    ctx.strokeStyle='rgba(216,90,48,0.4)';ctx.lineWidth=1;ctx.stroke();
-  }
-}
-
-function gauss(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
-
-function runSample(){
-  if(animFrame)cancelAnimationFrame(animFrame);
-  const alpha=1.8;
-  let x=Math.random()*W,y=Math.random()*S;
-  const chain=[[x,y]];
-  activeChain=chain;
-  const totalSteps=200;
-  let step=0;
-  function tick(){
-    const batchSize=3;
-    for(let b=0;b<batchSize&&step<totalSteps;b++,step++){
-      const[sx,sy]=scoreAt(x,y);
-      x+=alpha*sx+Math.sqrt(2*alpha*0.3)*gauss();
-      y+=alpha*sy+Math.sqrt(2*alpha*0.3)*gauss();
-      x=Math.max(5,Math.min(W-5,x));
-      y=Math.max(5,Math.min(S-5,y));
-      chain.push([x,y]);
-    }
-    drawSampling();
-    if(step<totalSteps){animFrame=requestAnimationFrame(tick);}
-    else{trails.push([...chain]);activeChain=null;drawSampling();}
-  }
-  tick();
-}
-
-function runMany(){
-  if(animFrame)cancelAnimationFrame(animFrame);
-  activeChain=null;
-  for(let n=0;n<30;n++){
-    const alpha=1.8;
-    let x=Math.random()*W,y=Math.random()*S;
-    const chain=[[x,y]];
-    for(let s=0;s<200;s++){
-      const[sc0,sc1]=scoreAt(x,y);
-      x+=alpha*sc0+Math.sqrt(2*alpha*0.3)*gauss();
-      y+=alpha*sc1+Math.sqrt(2*alpha*0.3)*gauss();
-      x=Math.max(5,Math.min(W-5,x));
-      y=Math.max(5,Math.min(S-5,y));
-      chain.push([x,y]);
-    }
-    trails.push(chain);
-  }
-  drawSampling();
-}
-
-function clearSamples(){
-  if(animFrame)cancelAnimationFrame(animFrame);
-  trails=[];activeChain=null;drawSampling();
-}
-
-drawTraining();
-drawSampling();
-</script>
+  <a class="card" href="./annealed-langevin.html">
+    <div class="title">Annealed Langevin</div>
+    <div class="desc">Visualize annealing, energy barriers, and mixing.</div>
+  </a>
+</body>
+</html>
